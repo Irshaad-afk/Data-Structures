@@ -1,0 +1,84 @@
+name: Daily DSA File Push
+
+on:
+  schedule:
+    # 7:30 PM India Standard Time (14:00 UTC)
+    - cron: "0 14 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: daily-dsa-file-push
+  cancel-in-progress: false
+
+jobs:
+  push-next-files:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Extract and commit the next three files
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          import subprocess
+          import zipfile
+          from pathlib import Path
+
+          archive = Path(".github/source/DSA.zip")
+          if not archive.exists():
+              raise SystemExit(
+                  "Missing .github/source/DSA.zip. Upload the original DSA.zip "
+                  "to this path once, then rerun the workflow."
+              )
+
+          repo = Path(".")
+          added = []
+          with zipfile.ZipFile(archive) as zf:
+              for member in zf.infolist():
+                  if member.is_dir():
+                      continue
+                  name = Path(member.filename).name
+                  # Only take top-level C source files; preserve ZIP order.
+                  if "/" in member.filename.replace("\\", "/") or not name.lower().endswith(".c"):
+                      continue
+                  target = repo / name
+                  if target.exists():
+                      continue
+                  target.write_bytes(zf.read(member))
+                  added.append(name)
+                  if len(added) == 3:
+                      break
+
+          if not added:
+              print("No missing C files remain in the source archive.")
+              Path(os.environ["GITHUB_OUTPUT"]).write_text("changed=false\n")
+          else:
+              subprocess.run(["git", "config", "user.name", "github-actions[bot]"], check=True)
+              subprocess.run(["git", "config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com"], check=True)
+              subprocess.run(["git", "add", "--", *added], check=True)
+              subprocess.run(["git", "commit", "-m", "Add next 3 DSA source files"], check=True)
+              Path(os.environ["GITHUB_OUTPUT"]).write_text("changed=true\n")
+              print("Added files:", ", ".join(added))
+          PY
+
+      - name: Push to main
+        if: success()
+        run: |
+          if [[ -n "$(git status --porcelain)" ]]; then
+            echo "Unexpected uncommitted changes remain; refusing to push."
+            exit 1
+          fi
+          git push origin main
