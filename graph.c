@@ -30,7 +30,7 @@ void matrixToList(G *g, int graph[MAX][MAX], int n)
     {
         Node *last = NULL;
 
-        for (int j = 0; i < n; j++)
+        for (int j = 0; j < n; j++)
         {
             if (graph[i][j] == 1)
             {
